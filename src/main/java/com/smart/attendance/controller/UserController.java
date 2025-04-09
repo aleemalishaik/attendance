@@ -1,8 +1,13 @@
 package com.smart.attendance.controller;
 
+import com.smart.attendance.model.Attendance;
 import com.smart.attendance.model.User;
+import com.smart.attendance.repository.AttendanceRepository;
 import com.smart.attendance.repository.UserRepository;
 import com.smart.attendance.service.LogService;
+
+import jakarta.servlet.http.HttpServletResponse;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.*;
@@ -13,8 +18,10 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -26,7 +33,8 @@ public class UserController {
 
     @Autowired
     private UserRepository userRepository;
-
+    @Autowired
+    private AttendanceRepository attendanceRepository;
     @Autowired
     private RestTemplate restTemplate;
 
@@ -191,4 +199,65 @@ public class UserController {
         logService.logActivity("User Deleted", "User " + employeeId + " was deleted.");
         return ResponseEntity.ok("User and image deleted successfully!");
     }
+
+    @GetMapping("/stats/{employeeId}")
+public ResponseEntity<?> getUserStats(@PathVariable String employeeId) {
+    User user = userRepository.findByEmployeeId(employeeId)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+
+    List<Attendance> attendanceRecords = attendanceRepository.findByUserEmployeeId(employeeId);
+
+    long totalDays = attendanceRecords.size();
+    long presentDays = attendanceRecords.stream()
+            .filter(attendance -> attendance.getStatus().equalsIgnoreCase("On Time") ||
+                                  attendance.getStatus().equalsIgnoreCase("Late"))
+            .count();
+
+    double attendancePercentage = (totalDays > 0) ? ((double) presentDays / totalDays) * 100 : 0;
+
+    Map<String, Object> stats = new HashMap<>();
+    stats.put("employeeId", user.getEmployeeId());
+    stats.put("name", user.getName());
+    stats.put("email", user.getEmail());
+    stats.put("totalDays", totalDays);
+    stats.put("presentDays", presentDays);
+    stats.put("attendancePercentage", String.format("%.2f", attendancePercentage));
+    stats.put("attendanceRecords", attendanceRecords);
+
+    return ResponseEntity.ok(stats);
+}
+
+
+@GetMapping("/stats/export-csv/{employeeId}")
+public void exportUserStatsAsCSV(@PathVariable String employeeId, HttpServletResponse response) {
+    try {
+        User user = userRepository.findByEmployeeId(employeeId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        List<Attendance> attendanceRecords = attendanceRepository.findByUserEmployeeId(employeeId);
+
+        // Set response headers
+        response.setContentType("text/csv");
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + employeeId + "_stats.csv");
+
+        PrintWriter writer = response.getWriter();
+        writer.println("Employee ID, Name, Email, Total Days, Present Days, Attendance Percentage");
+        writer.printf("%s,%s,%s,%d,%d,%.2f%%\n",
+                user.getEmployeeId(), user.getName(), user.getEmail(),
+                attendanceRecords.size(),
+                attendanceRecords.stream().filter(a -> a.getStatus().equalsIgnoreCase("On Time") || a.getStatus().equalsIgnoreCase("Late")).count(),
+                ((double) attendanceRecords.stream().filter(a -> a.getStatus().equalsIgnoreCase("On Time") || a.getStatus().equalsIgnoreCase("Late")).count() / attendanceRecords.size()) * 100
+        );
+
+        // Add attendance records
+        writer.println("\nDate, Status");
+        for (Attendance record : attendanceRecords) {
+            writer.printf("%s,%s\n", record.getScannedAt(), record.getStatus());
+        }
+
+        writer.flush();
+    } catch (Exception e) {
+        response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
+    }
+}
 }
