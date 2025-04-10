@@ -1,9 +1,13 @@
 package com.smart.attendance.controller;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import com.smart.attendance.config.AppProperties;
 import com.smart.attendance.utils.ImageUtils;
+
+import jakarta.annotation.PostConstruct;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -14,9 +18,18 @@ import java.util.logging.Logger;
 @RequestMapping("/api/images")
 public class ImageController {
 
+    @Autowired
+    private AppProperties appProperties;
+
     private static final Logger LOGGER = Logger.getLogger(ImageController.class.getName());
 
-    private final String IMAGE_DIRECTORY = "D:/attendance/faces/"; // ✅ Set your image directory
+    private String IMAGE_DIRECTORY = ""; // ✅ Set your image directory
+
+    @PostConstruct
+    public void init() {
+        IMAGE_DIRECTORY = appProperties.getImagesDir();
+        LOGGER.info("✔️ Image directory loaded: " + IMAGE_DIRECTORY);
+    }
 
     // ✅ Get all images' URLs
     @GetMapping
@@ -39,7 +52,7 @@ public class ImageController {
 
             for (File file : files) {
                 if (file.isFile() && isImage(file.getName())) {
-                    imageUrls.add("/api/images/view/" + file.getName()); // ✅ Serve images via API
+                    imageUrls.add("/images/view/" + file.getName()); // ✅ Serve images via API
                     LOGGER.info("✅ Added image to list: " + file.getName());
                 }
             }

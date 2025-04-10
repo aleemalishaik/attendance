@@ -1,5 +1,6 @@
 package com.smart.attendance.controller;
 
+import com.smart.attendance.config.AppProperties;
 import com.smart.attendance.service.AttendanceService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -26,7 +27,9 @@ public class FaceAuthController {
     @Autowired
     private AttendanceService attendanceService;
 
-    private final String FASTAPI_BASE_URL = "http://localhost:8000";
+    @Autowired
+    private AppProperties appProperties;
+
     private final RestTemplate restTemplate = new RestTemplate();
 
     private static final Logger LOGGER = Logger.getLogger(FaceAuthController.class.getName());
@@ -48,8 +51,7 @@ public class FaceAuthController {
             body.add("file", new FileSystemResource(tempFile)); // ✅ Use FileSystemResource
 
             HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
-            String apiUrl = FASTAPI_BASE_URL + "/recognize_face/";
-
+            String apiUrl = appProperties.getFastapiUrl() + "/recognize_face/";
             // ✅ Call FastAPI
             LOGGER.info("🔍 Calling FastAPI for face recognition...");
             ResponseEntity<Map> response = restTemplate.postForEntity(apiUrl, requestEntity, Map.class);

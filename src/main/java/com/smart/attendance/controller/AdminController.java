@@ -16,7 +16,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.logging.Logger;
 
-@CrossOrigin(origins = "http://localhost:3000")
 @RestController
 @RequestMapping("/api/admin")
 public class AdminController {
@@ -146,7 +145,7 @@ public class AdminController {
 
     @DeleteMapping("/delete")
     public ResponseEntity<?> deleteAdmin(@RequestParam(required = false) String username,
-                                         @RequestParam(required = false) String email) {
+            @RequestParam(required = false) String email) {
         if (username == null && email == null) {
             LOGGER.warning("❌ Please provide a username or email to delete.");
             return ResponseEntity.badRequest().body("❌ Please provide a username or email to delete.");

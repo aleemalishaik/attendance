@@ -1,11 +1,13 @@
 package com.smart.attendance.controller;
 
+import com.smart.attendance.config.AppProperties;
 import com.smart.attendance.model.Attendance;
 import com.smart.attendance.model.User;
 import com.smart.attendance.repository.AttendanceRepository;
 import com.smart.attendance.repository.UserRepository;
 import com.smart.attendance.service.LogService;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletResponse;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,15 +43,26 @@ public class UserController {
     @Autowired
     private LogService logService; // ✅ Inject LogService to save logs
 
-    private final String IMAGE_DIRECTORY = "D:/attendance/faces/";
-    private final String FASTAPI_BASE_URL = "http://localhost:8000";
+    @Autowired
+    private AppProperties appProperties;
+
     private static final Logger LOGGER = Logger.getLogger(UserController.class.getName());
 
-    public UserController() {
+    private String IMAGE_DIRECTORY;
+    private String FASTAPI_BASE_URL;
+
+    @PostConstruct
+    public void init() {
+        this.IMAGE_DIRECTORY = appProperties.getImagesDir();
+        this.FASTAPI_BASE_URL = appProperties.getFastapiUrl();
+
         File directory = new File(IMAGE_DIRECTORY);
         if (!directory.exists()) {
             directory.mkdirs();
         }
+
+        LOGGER.info("✔️ Loaded FastAPI URL: " + FASTAPI_BASE_URL);
+        LOGGER.info("✔️ Image Directory: " + IMAGE_DIRECTORY);
     }
 
     // ✅ Register a new user and train their face
@@ -61,7 +74,7 @@ public class UserController {
             @RequestParam("file") MultipartFile file) {
         try {
             LOGGER.info("📌 Registering new user: " + name + " (ID: " + employeeId + ")");
-            
+
             // Check if email or employeeId already exists
             if (userRepository.findByEmail(email).isPresent()) {
                 LOGGER.warning("❌ Email already in use: " + email);
@@ -95,7 +108,7 @@ public class UserController {
                     .build();
             userRepository.save(user);
             LOGGER.info("✅ User saved in database: " + name + " (ID: " + employeeId + ")");
-            
+
             // 🚀 Call FastAPI to train face
             ResponseEntity<String> fastApiResponse = trainFace(imageFile, employeeId, name);
             if (!fastApiResponse.getStatusCode().is2xxSuccessful()) {
@@ -105,7 +118,8 @@ public class UserController {
             }
 
             // ✅ Log this action
-            logService.logActivity("User Registered", "User " + name + " (ID: " + employeeId + ") registered successfully.");
+            logService.logActivity("User Registered",
+                    "User " + name + " (ID: " + employeeId + ") registered successfully.");
             return ResponseEntity.ok("User registered & trained successfully!");
         } catch (IOException e) {
             LOGGER.severe("❌ Error saving image: " + e.getMessage());
@@ -171,7 +185,7 @@ public class UserController {
 
         userRepository.save(user);
         LOGGER.info("✅ User updated successfully: " + employeeId);
-        
+
         logService.logActivity("User Updated", "User " + employeeId + " details updated.");
         return ResponseEntity.ok("User updated successfully!");
     }
@@ -201,63 +215,67 @@ public class UserController {
     }
 
     @GetMapping("/stats/{employeeId}")
-public ResponseEntity<?> getUserStats(@PathVariable String employeeId) {
-    User user = userRepository.findByEmployeeId(employeeId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
-
-    List<Attendance> attendanceRecords = attendanceRepository.findByUserEmployeeId(employeeId);
-
-    long totalDays = attendanceRecords.size();
-    long presentDays = attendanceRecords.stream()
-            .filter(attendance -> attendance.getStatus().equalsIgnoreCase("On Time") ||
-                                  attendance.getStatus().equalsIgnoreCase("Late"))
-            .count();
-
-    double attendancePercentage = (totalDays > 0) ? ((double) presentDays / totalDays) * 100 : 0;
-
-    Map<String, Object> stats = new HashMap<>();
-    stats.put("employeeId", user.getEmployeeId());
-    stats.put("name", user.getName());
-    stats.put("email", user.getEmail());
-    stats.put("totalDays", totalDays);
-    stats.put("presentDays", presentDays);
-    stats.put("attendancePercentage", String.format("%.2f", attendancePercentage));
-    stats.put("attendanceRecords", attendanceRecords);
-
-    return ResponseEntity.ok(stats);
-}
-
-
-@GetMapping("/stats/export-csv/{employeeId}")
-public void exportUserStatsAsCSV(@PathVariable String employeeId, HttpServletResponse response) {
-    try {
+    public ResponseEntity<?> getUserStats(@PathVariable String employeeId) {
         User user = userRepository.findByEmployeeId(employeeId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         List<Attendance> attendanceRecords = attendanceRepository.findByUserEmployeeId(employeeId);
 
-        // Set response headers
-        response.setContentType("text/csv");
-        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + employeeId + "_stats.csv");
+        long totalDays = attendanceRecords.size();
+        long presentDays = attendanceRecords.stream()
+                .filter(attendance -> attendance.getStatus().equalsIgnoreCase("On Time") ||
+                        attendance.getStatus().equalsIgnoreCase("Late"))
+                .count();
 
-        PrintWriter writer = response.getWriter();
-        writer.println("Employee ID, Name, Email, Total Days, Present Days, Attendance Percentage");
-        writer.printf("%s,%s,%s,%d,%d,%.2f%%\n",
-                user.getEmployeeId(), user.getName(), user.getEmail(),
-                attendanceRecords.size(),
-                attendanceRecords.stream().filter(a -> a.getStatus().equalsIgnoreCase("On Time") || a.getStatus().equalsIgnoreCase("Late")).count(),
-                ((double) attendanceRecords.stream().filter(a -> a.getStatus().equalsIgnoreCase("On Time") || a.getStatus().equalsIgnoreCase("Late")).count() / attendanceRecords.size()) * 100
-        );
+        double attendancePercentage = (totalDays > 0) ? ((double) presentDays / totalDays) * 100 : 0;
 
-        // Add attendance records
-        writer.println("\nDate, Status");
-        for (Attendance record : attendanceRecords) {
-            writer.printf("%s,%s\n", record.getScannedAt(), record.getStatus());
-        }
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("employeeId", user.getEmployeeId());
+        stats.put("name", user.getName());
+        stats.put("email", user.getEmail());
+        stats.put("totalDays", totalDays);
+        stats.put("presentDays", presentDays);
+        stats.put("attendancePercentage", String.format("%.2f", attendancePercentage));
+        stats.put("attendanceRecords", attendanceRecords);
 
-        writer.flush();
-    } catch (Exception e) {
-        response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
+        return ResponseEntity.ok(stats);
     }
-}
+
+    @GetMapping("/stats/export-csv/{employeeId}")
+    public void exportUserStatsAsCSV(@PathVariable String employeeId, HttpServletResponse response) {
+        try {
+            User user = userRepository.findByEmployeeId(employeeId)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            List<Attendance> attendanceRecords = attendanceRepository.findByUserEmployeeId(employeeId);
+
+            // Set response headers
+            response.setContentType("text/csv");
+            response.setHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + employeeId + "_stats.csv");
+
+            PrintWriter writer = response.getWriter();
+            writer.println("Employee ID, Name, Email, Total Days, Present Days, Attendance Percentage");
+            writer.printf("%s,%s,%s,%d,%d,%.2f%%\n",
+                    user.getEmployeeId(), user.getName(), user.getEmail(),
+                    attendanceRecords.size(),
+                    attendanceRecords.stream()
+                            .filter(a -> a.getStatus().equalsIgnoreCase("On Time")
+                                    || a.getStatus().equalsIgnoreCase("Late"))
+                            .count(),
+                    ((double) attendanceRecords.stream()
+                            .filter(a -> a.getStatus().equalsIgnoreCase("On Time")
+                                    || a.getStatus().equalsIgnoreCase("Late"))
+                            .count() / attendanceRecords.size()) * 100);
+
+            // Add attendance records
+            writer.println("\nDate, Status");
+            for (Attendance record : attendanceRecords) {
+                writer.printf("%s,%s\n", record.getScannedAt(), record.getStatus());
+            }
+
+            writer.flush();
+        } catch (Exception e) {
+            response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
+        }
+    }
 }
